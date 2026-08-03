@@ -1,0 +1,15 @@
+# West manifest for the cadence sensor firmware (self-contained app).
+#
+# To build standalone, create a workspace and pull the nRF Connect SDK:
+#   ./setup_workspace.command
+# Developed against NCS 3.3.0-preview3 (Zephyr 4.3), the same revision the
+# FindMyTag, JAVELYTICS and RideFormTracker firmwares use — one checkout can
+# serve all of them.
+manifest:
+  version: "1.2"
+  projects:
+    - name: sdk-nrf
+      path: nrf
+      url: https://github.com/nrfconnect/sdk-nrf.git
+      revision: v3.3.0-preview3-branch
+      import: true

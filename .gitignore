@@ -1,0 +1,14 @@
+.DS_Store
+
+# --- KiCad ---
+# Auto-generated or per-user, and regenerated on demand. The backups in
+# particular are a zip per save and would dominate the repository.
+*-backups/
+*.kicad_prl
+fp-info-cache
+*.lck
+~*.lck
+*-bak
+*.kicad_pcb-bak
+*.kicad_sch-bak
+_autosave-*

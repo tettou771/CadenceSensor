@@ -1,0 +1,184 @@
+// Copyright (c) 2026
+// SPDX-License-Identifier: Apache-2.0
+//
+// Cadence sensor bring-up target: RideFormTracker PCB **v1.0** (MDBT50Q-1MV2 /
+// nRF52840, LSM6DSV over SPI). The QSPI flash and the magnetometer that this
+// PCB carries are deliberately left disabled — a crank-mounted cadence sensor
+// will not have them, so nothing in the firmware may grow a dependency on them.
+//
+// v1.0 vs v1.1: only the RGB LED pins differ, see the leds node below.
+//
+// See HARDWARE.md for the full pin table.
+
+/dts-v1/;
+#include <nordic/nrf52840_qiaa.dtsi>
+#include "cadence_rft-pinctrl.dtsi"
+
+/ {
+	model = "Cadence sensor (RFT PCB v1.1)";
+	compatible = "nordic,cadence-rft";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,console = &cdc_acm_uart0;      /* diagnostics console  */
+		zephyr,uart-mcumgr = &cdc_acm_uart1;  /* SMP firmware updates */
+		/* nrf52840.dtsi points this at &cryptocell, which we disable
+		 * below — the plain RNG peripheral is a hardware TRNG too, and
+		 * the BLE stack's entropy needs are modest. */
+		zephyr,entropy = &rng;
+	};
+
+	/* RGB LED (D1, common anode → active LOW).
+	 *
+	 * ==> PCB v1.0 pin assignment. <==
+	 *
+	 * This is the ONLY thing that differs between RideFormTracker v1.0 and
+	 * v1.1 as far as this firmware is concerned — SPI, both IMU interrupts,
+	 * the crystal, USB and SWD are identical on both. For v1.1 swap in:
+	 *
+	 *     led_r  &gpio0 30      (pad 14)
+	 *     led_g  &gpio0 29      (pad 10)
+	 *     led_b  &gpio0 31      (pad 12)
+	 *
+	 * Note P0.28 is LED_R here but the magnetometer's I2C SDA on v1.1, so
+	 * this file is genuinely revision-specific and not merely cosmetic.
+	 * Getting it wrong costs only the LEDs though: nothing in the cadence
+	 * path touches them, and they are lit only while USB is attached.
+	 */
+	leds {
+		compatible = "gpio-leds";
+		led_r: led_red {
+			gpios = <&gpio0 28 GPIO_ACTIVE_LOW>;   /* pad 13 */
+			label = "LED red";
+		};
+		led_g: led_green {
+			gpios = <&gpio0 31 GPIO_ACTIVE_LOW>;   /* pad 12 */
+			label = "LED green";
+		};
+		led_b: led_blue {
+			gpios = <&gpio0 30 GPIO_ACTIVE_LOW>;   /* pad 14 */
+			label = "LED blue";
+		};
+	};
+
+	aliases {
+		led-red = &led_r;
+		led-green = &led_g;
+		led-blue = &led_b;
+		watchdog0 = &wdt0;
+	};
+
+	/* LSM6DSV interrupt lines, driven by our own driver (no Zephyr sensor
+	 * driver — see src/lsm6dsv.c for why). INT1 carries wake-up, which is
+	 * what pulls the sampler out of its idle state. */
+	zephyr,user {
+		imu-int1-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+		imu-int2-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* DC/DC regulator: this runs off a battery on a crank arm and advertises
+ * whenever the bike is moving, so the ~40% saving on radio TX current is the
+ * single biggest battery win available. */
+&reg1 {
+	regulator-initial-mode = <NRF5X_REG_MODE_DCDC>;
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+/* SPIM3 — LSM6DSV 6-axis IMU. CS is P1.09 on this PCB. */
+&spi3 {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	max-frequency = <DT_FREQ_M(8)>;
+	pinctrl-0 = <&spi3_default>;
+	pinctrl-1 = <&spi3_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+
+	lsm6dsv: lsm6dsv@0 {
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(8)>;
+		label = "LSM6DSV";
+	};
+};
+
+/* Two USB CDC-ACM endpoints, deliberately split:
+ *   uart0 = the human console (status, live cadence, raw accel)
+ *   uart1 = mcumgr SMP, i.e. how new firmware gets in over the USB cable
+ * Keeping them apart means a firmware upload never has to fight the console
+ * for the same byte stream, and a chatty console can never corrupt an upload.
+ */
+zephyr_udc0: &usbd {
+	compatible = "nordic,nrf-usbd";
+	status = "okay";
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+	cdc_acm_uart1: cdc_acm_uart1 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+/* Not populated / not used by the cadence sensor. */
+&qspi {
+	status = "disabled";
+};
+
+&i2c1 {
+	status = "disabled";
+};
+
+&cryptocell {
+	status = "disabled";
+};
+
+&nfct {
+	status = "disabled";
+};
+
+/* Internal flash layout — MCUboot + two image slots + NVS.
+ * Kept identical to the FindMyTag layout so a board can be moved between the
+ * two firmwares without its NVS contents landing at a different address.
+ * pm_static.yml pins the same numbers for the Partition Manager. */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x0 0x20000>; /* 128 KB */
+		};
+		slot0_partition: partition@20000 {
+			label = "image-0";
+			reg = <0x20000 0x68000>; /* 416 KB */
+		};
+		slot1_partition: partition@88000 {
+			label = "image-1";
+			reg = <0x88000 0x68000>; /* 416 KB */
+		};
+		storage_partition: partition@f0000 {
+			label = "storage";
+			reg = <0xf0000 0x10000>; /* 64 KB NVS */
+		};
+	};
+};

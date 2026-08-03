@@ -1,0 +1,9 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+board:
+  name: cadence_rft
+  full_name: Cadence sensor on RideFormTracker PCB v1.1 (MDBT50Q / nRF52840)
+  vendor: nordic
+  socs:
+    - name: nrf52840

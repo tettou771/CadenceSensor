@@ -1,0 +1,16 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+CONFIG_ARM_MPU=y
+CONFIG_HW_STACK_PROTECTION=y
+
+# 32.768 kHz crystal (X1) as LF clock source. This one is not optional here:
+# the CSC Measurement carries a "last crank event time" in 1/1024 s units that
+# the head unit differentiates to get RPM, so the whole reading is only as
+# accurate as this clock. The internal RC oscillator is +/-500 ppm even when
+# calibrated, the crystal is +/-20 ppm.
+CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL=y
+
+CONFIG_GPIO=y
+CONFIG_SPI=y
+CONFIG_PINCTRL=y

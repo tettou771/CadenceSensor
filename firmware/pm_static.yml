@@ -1,0 +1,58 @@
+# Static partition layout for cadence_rft (nRF52840, 1 MB internal flash).
+#
+# NCS's Partition Manager overrides the DTS `fixed-partitions` node whenever
+# sysbuild builds a bootloader, and it lays the partitions out dynamically —
+# which means the addresses move whenever the images change size. Pinning them
+# here matters for two reasons: a shifted mcuboot_secondary breaks USB updates
+# on already-flashed boards, and the layout stays identical to the FindMyTag
+# firmware so the same PCB can be moved between the two.
+#
+# Keep this in sync with the &flash0 partitions in the board DTS.
+
+mcuboot:
+  address: 0x0
+  size: 0x20000        # 128 KB
+  region: flash_primary
+  placement:
+    before: [mcuboot_primary]
+
+mcuboot_pad:
+  address: 0x20000
+  size: 0x200
+  region: flash_primary
+  placement:
+    align: {start: 0x1000}
+    before: [mcuboot_primary_app]
+
+mcuboot_primary:
+  address: 0x20000
+  size: 0x68000        # 416 KB, incl. the pad
+  region: flash_primary
+  span: [mcuboot_pad, app]
+
+mcuboot_primary_app:
+  address: 0x20200
+  size: 0x67e00
+  region: flash_primary
+  span: [app]
+
+app:
+  address: 0x20200
+  size: 0x67e00
+  region: flash_primary
+
+mcuboot_secondary:
+  address: 0x88000
+  size: 0x68000        # must equal mcuboot_primary
+  region: flash_primary
+  placement:
+    after: [mcuboot_primary]
+    align: {start: 0x1000}
+
+nvs_storage:
+  address: 0xf0000
+  size: 0x10000        # 64 KB
+  region: flash_primary
+  placement:
+    after: [mcuboot_secondary]
+    align: {start: 0x1000}
