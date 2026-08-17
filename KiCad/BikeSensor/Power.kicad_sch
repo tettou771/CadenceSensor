@@ -1692,6 +1692,100 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "ThroughHole:TH_0.7"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "H"
+				(at 3.556 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "ThroughHole:TH_0.7mm"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "TH_0.7_0_1"
+				(circle
+					(center 2.032 0)
+					(radius 0.762)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "TH_0.7_1_1"
+				(pin input line
+					(at -1.27 0 0)
+					(length 2.54)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:+3.3V"
 			(power global)
 			(pin_numbers
@@ -2439,6 +2533,16 @@
 	)
 	(wire
 		(pts
+			(xy 215.9 40.64) (xy 209.55 40.64)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5e7a6905-9883-41f2-be0f-5dc150e4e385")
+	)
+	(wire
+		(pts
 			(xy 63.5 71.12) (xy 58.42 71.12)
 		)
 		(stroke
@@ -2526,6 +2630,16 @@
 			(type default)
 		)
 		(uuid "79678339-578d-427c-ab18-4954b79fcfd9")
+	)
+	(wire
+		(pts
+			(xy 215.9 38.1) (xy 209.55 38.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7d40303d-752d-4c3d-b70b-f14ce5b8d423")
 	)
 	(wire
 		(pts
@@ -2659,6 +2773,16 @@
 	)
 	(wire
 		(pts
+			(xy 209.55 38.1) (xy 209.55 35.56)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a9833511-b905-4482-a218-3b3b0ad395f5")
+	)
+	(wire
+		(pts
 			(xy 191.77 69.85) (xy 191.77 68.58)
 		)
 		(stroke
@@ -2736,6 +2860,16 @@
 			(type default)
 		)
 		(uuid "c80eb53b-499e-4d0b-acaf-46435cc90365")
+	)
+	(wire
+		(pts
+			(xy 209.55 40.64) (xy 209.55 44.45)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c9a79635-3c71-4625-a1cf-c3f24cfa3a22")
 	)
 	(wire
 		(pts
@@ -2998,6 +3132,84 @@
 		)
 	)
 	(symbol
+		(lib_id "ThroughHole:TH_0.7")
+		(at 217.17 38.1 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(in_pos_files no)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "0812e52e-7829-446b-b099-3667ea488daa")
+		(property "Reference" "H1"
+			(at 220.98 38.0999 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" ""
+			(at 217.17 38.1 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "ThroughHole:TH_0.7mm"
+			(at 217.17 38.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 217.17 38.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 217.17 38.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1799ce25-2350-4dc4-aa73-8401e70d9fac")
+		)
+		(instances
+			(project "BikeTracker"
+				(path "/a119662d-6a69-4a30-bf8f-7f32d744a0f2/3774056c-882f-41e0-8081-2e90c68d5b11"
+					(reference "H1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Seeeduino_XIAO_v1.0_191112-eagle-import:GND_POWER")
 		(at 191.77 80.01 0)
 		(unit 1)
@@ -3240,6 +3452,84 @@
 		)
 	)
 	(symbol
+		(lib_id "Seeeduino_XIAO_v1.0_191112-eagle-import:GND_POWER")
+		(at 209.55 44.45 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "2623b06b-5978-4258-8790-6d907bee46e8")
+		(property "Reference" "#U$09"
+			(at 209.55 44.45 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND_POWER"
+			(at 209.55 44.45 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 209.55 44.45 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 209.55 44.45 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 209.55 44.45 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "02a71447-2beb-4e1a-bbf4-e3796e6da45d")
+		)
+		(instances
+			(project "BikeTracker"
+				(path "/a119662d-6a69-4a30-bf8f-7f32d744a0f2/3774056c-882f-41e0-8081-2e90c68d5b11"
+					(reference "#U$09")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 78.74 49.53 270)
 		(unit 1)
@@ -3314,6 +3604,84 @@
 			(project "BikeTracker"
 				(path "/a119662d-6a69-4a30-bf8f-7f32d744a0f2/3774056c-882f-41e0-8081-2e90c68d5b11"
 					(reference "R20")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+BATT")
+		(at 209.55 35.56 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "347dd01a-bcb0-4219-af6c-c7678c316215")
+		(property "Reference" "#PWR07"
+			(at 209.55 39.37 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+V_BAT"
+			(at 209.55 30.48 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 209.55 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 209.55 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+BATT\""
+			(at 209.55 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "7e182260-2b78-42c7-a99b-75850ba21618")
+		)
+		(instances
+			(project "BikeTracker"
+				(path "/a119662d-6a69-4a30-bf8f-7f32d744a0f2/3774056c-882f-41e0-8081-2e90c68d5b11"
+					(reference "#PWR07")
 					(unit 1)
 				)
 			)
@@ -4379,9 +4747,9 @@
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
-		(in_pos_files yes)
+		(in_pos_files no)
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "a2ec3b13-4615-4329-9c21-a5a8bda9a912")
@@ -4487,7 +4855,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Diode_SMD:D_0402_1005Metric"
+		(property "Footprint" "Diode_SMD:D_SOD-323"
 			(at 109.22 116.84 0)
 			(hide yes)
 			(show_name no)
@@ -4716,6 +5084,84 @@
 			(project "BikeTracker"
 				(path "/a119662d-6a69-4a30-bf8f-7f32d744a0f2/3774056c-882f-41e0-8081-2e90c68d5b11"
 					(reference "#U$028")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "ThroughHole:TH_0.7")
+		(at 217.17 40.64 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(in_pos_files no)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "b48b4bba-a3bc-4ace-ba32-79889e66b121")
+		(property "Reference" "H2"
+			(at 220.98 40.6399 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" ""
+			(at 217.17 40.64 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "ThroughHole:TH_0.7mm"
+			(at 217.17 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 217.17 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 217.17 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "08b44f97-e9cc-4998-ae36-5d990c2f0978")
+		)
+		(instances
+			(project "BikeTracker"
+				(path "/a119662d-6a69-4a30-bf8f-7f32d744a0f2/3774056c-882f-41e0-8081-2e90c68d5b11"
+					(reference "H2")
 					(unit 1)
 				)
 			)
@@ -5070,7 +5516,7 @@
 				)
 			)
 		)
-		(property "Value" "TPS7A0233DQNR"
+		(property "Value" "TPS7A0233PDQNR"
 			(at 133.35 60.96 0)
 			(show_name no)
 			(do_not_autoplace no)
