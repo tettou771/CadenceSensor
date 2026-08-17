@@ -27,7 +27,10 @@ LOG_MODULE_REGISTER(lsm6dsv, LOG_LEVEL_INF);
 #define REG_CTRL3            0x12 /* BOOT | BDU | ... | IF_INC | SW_RESET */
 #define REG_CTRL8            0x17 /* HP_LPF2_XL_BW[7:5] | FS_XL[1:0] */
 #define REG_STATUS           0x1e
-#define REG_OUTX_L_A         0x28
+/* First of the six accelerometer output bytes. Deliberately NOT named
+ * OUTX_L_A: on the LSM6DSV16B this address is OUTZ_L_A and the three axes run
+ * backwards from here. See lsm6dsv_read_accel_raw(). */
+#define REG_ACCEL_OUT        0x28
 #define REG_WAKE_UP_SRC      0x45
 #define REG_D6D_SRC          0x47
 #define REG_FUNCTIONS_ENABLE 0x50
@@ -173,6 +176,7 @@ static const struct spi_dt_spec imu = SPI_DT_SPEC_GET(
 	SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_OP_MODE_MASTER, 0);
 
 static bool present;
+static uint8_t whoami;
 
 int lsm6dsv_read_reg(uint8_t reg, uint8_t *buf, uint8_t len)
 {
@@ -256,8 +260,15 @@ int lsm6dsv_init(void)
 	if (err) {
 		return err;
 	}
-	if (id != LSM6DSV_WHOAMI && id != LSM6DSV16B_WHOAMI) {
-		LOG_ERR("WHO_AM_I 0x%02x — no LSM6DSV here", id);
+
+	/* Kept even when the value is not one we know, so the console can say
+	 * WHICH way this failed rather than only that it did. */
+	whoami = id;
+
+	if (id != LSM6DSV_WHOAMI && id != LSM6DSV16B_WHOAMI &&
+	    id != LSM6DSV320X_WHOAMI) {
+		LOG_ERR("WHO_AM_I 0x%02x — no LSM6DSV here (expected 0x70, "
+			"0x71 or 0x73)", id);
 		return -ENODEV;
 	}
 
@@ -300,17 +311,38 @@ int lsm6dsv_read_accel_raw(int16_t out[3])
 		return -ENODEV;
 	}
 
-	err = lsm6dsv_read_reg(REG_OUTX_L_A, buf, sizeof(buf));
+	err = lsm6dsv_read_reg(REG_ACCEL_OUT, buf, sizeof(buf));
 	if (err) {
 		return err;
 	}
 
+	/* The LSM6DSV16B lays its accelerometer outputs out BACKWARDS: 0x28 is
+	 * OUTZ_L_A on that part and OUTX_L_A on every other one in the family
+	 * (0x70 plain/16X, 0x73 320X/80X — checked against ST's headers). The
+	 * same six-byte burst therefore arrives Z,Y,X on a 16B, so put it back
+	 * here rather than leave callers to work out which part they have.
+	 *
+	 * Nothing in the cadence path ever noticed, which is exactly why this
+	 * went unseen through a real ride: the detector finds the spindle axis
+	 * by looking for the one carrying the least AC energy, so ANY
+	 * permutation of the three axes gives the same answer. Something that
+	 * cares which way is up — a body or racket tracker on this same board —
+	 * would not be so forgiving. */
+	const bool reversed = (whoami == LSM6DSV16B_WHOAMI);
+
 	for (int i = 0; i < 3; i++) {
-		out[i] = (int16_t)((uint16_t)buf[i * 2] |
-				   ((uint16_t)buf[i * 2 + 1] << 8));
+		int w = reversed ? 2 - i : i;
+
+		out[i] = (int16_t)((uint16_t)buf[w * 2] |
+				   ((uint16_t)buf[w * 2 + 1] << 8));
 	}
 
 	return 0;
+}
+
+uint8_t lsm6dsv_whoami(void)
+{
+	return whoami;
 }
 
 int lsm6dsv_read_accel_mg(int16_t out[3])

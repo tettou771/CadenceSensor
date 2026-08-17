@@ -1,8 +1,12 @@
 build/
 build-*/
+build_*/
 build.env
 
 .DS_Store
 
 __pycache__/
 test/test_cadence
+
+# tools/battery_log.py output
+*.csv

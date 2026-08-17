@@ -17,5 +17,6 @@ target_sources(app PRIVATE
   src/cadence.c
   src/ble_csc.c
   src/lsm6dsv.c
+  src/battery.c
 )
 target_include_directories(app PRIVATE src)

@@ -58,6 +58,30 @@ if [ ! -f "$HEX" ]; then
 	exit 1
 fi
 
+# Does what is in build/ actually belong to $BOARD?
+#
+# Without --build this script flashes whatever happens to be sitting there, and
+# a build/ left over from a different board is not a theoretical hazard. The
+# wrong image flashes cleanly, boots, and then misbehaves in ways that look
+# exactly like a hardware fault: on the v1 PCB a cadence_rft image inverts both
+# LEDs (its ACTIVE_LOW pins drive the v1 board's ACTIVE_HIGH LEDs permanently
+# on) and has no soft-latch pin at all, so the board dies the instant the power
+# button is released — indistinguishable, from the outside, from a latch
+# circuit that does not work.
+#
+# Every sysbuild image under build/ carries the board it was configured for, so
+# ask them rather than trusting the directory. More than one distinct answer is
+# a mismatch too, which is why this compares the whole (sorted, unique) result.
+built_board=$(grep -h '^CONFIG_BOARD=' "$FW"/build/*/zephyr/.config 2>/dev/null |
+	sed 's/^CONFIG_BOARD="\(.*\)"$/\1/' | sort -u || true)
+
+if [ -n "$built_board" ] && [ "$built_board" != "$BOARD" ]; then
+	echo "!!! build/ holds an image built for: $(echo "$built_board" | tr '\n' ' ')" >&2
+	echo "!!! but BOARD is '$BOARD' (from build.env)." >&2
+	echo "!!! Refusing to flash — re-run with --build." >&2
+	exit 1
+fi
+
 # Pre-flight: is there ANY probe at all?
 #
 # Deliberately not the obvious check. Grepping `pyocd list` for "dap|cmsis"

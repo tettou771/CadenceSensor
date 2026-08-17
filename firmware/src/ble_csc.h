@@ -5,6 +5,14 @@
  * or Wahoo head unit, to Zwift/TrainerRoad, and to iOS/Android cycling apps —
  * nothing has to be taught about it.
  *
+ * Note that a head unit has to speak BLE sensors for any of that to matter.
+ * Plenty of them do not: ANT+ and BLE are different radios, and a unit whose
+ * spec sheet lists "Bluetooth" may well mean phone sync only, with sensors on
+ * ANT+ exclusively (the Bryton Rider 460 is exactly that, while the cheaper
+ * Rider 420 accepts both). ANT+ cannot be added here — it needs Nordic's S340
+ * SoftDevice, which belongs to the nRF5 SDK and cannot coexist with Zephyr's
+ * controller — so the head unit is the side that has to be chosen.
+ *
  * CRANK DATA ONLY, and asserted as such in three places: the Feature
  * characteristic, the Measurement flags, and the GAP appearance (1155 "Cadence
  * Sensor", not 1157 "Speed and Cadence Sensor"). All three come from the single
@@ -44,7 +52,11 @@ int ble_csc_init(void);
 
 /* Advertising follows motion, not power: a bike parked in a garage for a week
  * has no reason to broadcast, and a cadence sensor's whole battery budget is
- * advertising. Safe to call repeatedly with the same value. */
+ * advertising. Safe to call repeatedly with the same value.
+ *
+ * Callers pass intent, not permission — asking for advertising while every
+ * connection slot is taken is quietly treated as "off", so nothing outside this
+ * module has to track how many collectors are attached. */
 void ble_csc_set_advertising(bool on);
 
 /* Read the current cadence state and push a CSC Measurement notification.
@@ -55,6 +67,11 @@ void ble_csc_notify(void);
 
 bool ble_csc_is_connected(void);
 bool ble_csc_is_advertising(void);
+
+/* Links currently up, 0..CONFIG_BT_MAX_CONN. Worth showing on the console: it
+ * is the only way to tell "the head unit took the sensor and the phone cannot
+ * have it" apart from "the phone simply has not connected yet". */
+uint8_t ble_csc_conn_count(void);
 
 /* Battery Service level, 0-100 %. See the note in ble_csc.c about why this
  * board always reports full. */

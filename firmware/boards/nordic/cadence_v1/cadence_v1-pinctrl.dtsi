@@ -1,0 +1,26 @@
+// Copyright (c) 2026
+// SPDX-License-Identifier: Apache-2.0
+//
+// Pin assignments from KiCad/BikeSensor (BikeSensor.kicad_sch). The SPI bus is
+// wired identically to the RideFormTracker bring-up board, which is why the
+// IMU driver needed no changes when the PCB did.
+
+&pinctrl {
+	/* SPIM3 — LSM6DSV (MOSI P0.06, MISO P0.04, SCK P0.08; CS is a GPIO) */
+	spi3_default: spi3_default {
+		group1 {
+			psels = <NRF_PSEL(SPIM_MOSI, 0, 6)>,
+				<NRF_PSEL(SPIM_MISO, 0, 4)>,
+				<NRF_PSEL(SPIM_SCK, 0, 8)>;
+		};
+	};
+
+	spi3_sleep: spi3_sleep {
+		group1 {
+			psels = <NRF_PSEL(SPIM_MOSI, 0, 6)>,
+				<NRF_PSEL(SPIM_MISO, 0, 4)>,
+				<NRF_PSEL(SPIM_SCK, 0, 8)>;
+			low-power-enable;
+		};
+	};
+};

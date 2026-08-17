@@ -18,12 +18,28 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* WHO_AM_I values seen on this family. The RideFormTracker PCB turned out to
- * carry an LSM6DSV16B (0x71) rather than the plain LSM6DSV (0x70), so accept
- * both — the accelerometer path is identical, only the sensor hub differs,
- * and nothing here uses the sensor hub. */
+/* WHO_AM_I values across this family. All of them are accepted, because for
+ * everything this driver does they behave identically: same register map for
+ * CTRL1/CTRL3/CTRL8, same +/-8 g full-scale encoding, same 0.244 mg/LSB, same
+ * 6D and inactivity blocks, same INT1 routing bit. Verified against ST's own
+ * lsm6dsv*_reg.h headers register by register, and against the LSM6DSV320X
+ * datasheet for the parts of it that carry a number.
+ *
+ *   0x70  LSM6DSV, LSM6DSV16X
+ *   0x71  LSM6DSV16B          <- the RideFormTracker bring-up board
+ *   0x73  LSM6DSV320X, LSM6DSV80X   <- the v1 PCB
+ *
+ * The high-range parts add a SECOND accelerometer (+/-320 g on the 320X) behind
+ * its own CTRL1_XL_HG register, which stays powered down after reset. Nothing
+ * here touches it, so a 320X is simply a 16B with a spare instrument on board.
+ *
+ * ONE genuine difference, and it is easy to miss: the 16B lays its
+ * accelerometer output registers out in reverse (0x28 is OUTZ_L_A there, and
+ * OUTX_L_A everywhere else). lsm6dsv_read_accel_raw() undoes that, so callers
+ * always get X, Y, Z. */
 #define LSM6DSV_WHOAMI      0x70
 #define LSM6DSV16B_WHOAMI   0x71
+#define LSM6DSV320X_WHOAMI  0x73
 
 /* Accelerometer output data rate, in Hz.
  *
@@ -62,6 +78,13 @@ int lsm6dsv_init(void);
 /* True once lsm6dsv_init() has succeeded. Everything else is a no-op
  * returning -ENODEV until then. */
 bool lsm6dsv_present(void);
+
+/* The last WHO_AM_I actually read back, whether or not it was recognised, and
+ * 0 if the read itself failed. Worth surfacing on the console: "absent" covers
+ * two completely different faults, and this is what tells them apart —
+ * 0x00/0xff means the SPI wiring is not carrying data at all, while a plausible
+ * but unlisted value means a part this driver has not been taught about. */
+uint8_t lsm6dsv_whoami(void);
 
 /* Latest acceleration, in milli-g per axis. */
 int lsm6dsv_read_accel_mg(int16_t out[3]);

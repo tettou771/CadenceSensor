@@ -60,6 +60,19 @@ if [ ! -f "$BIN" ]; then
 	exit 1
 fi
 
+# Same guard as flash.command, and it matters more here: this path CONFIRMS the
+# image, so an image for the wrong board does not merely misbehave, it is made
+# permanent and survives the power cycle that would otherwise back it out.
+built_board=$(grep -h '^CONFIG_BOARD=' "$FW"/build/*/zephyr/.config 2>/dev/null |
+	sed 's/^CONFIG_BOARD="\(.*\)"$/\1/' | sort -u || true)
+
+if [ -n "$built_board" ] && [ "$built_board" != "$BOARD" ]; then
+	echo "!!! build/ holds an image built for: $(echo "$built_board" | tr '\n' ' ')" >&2
+	echo "!!! but BOARD is '$BOARD' (from build.env)." >&2
+	echo "!!! Refusing to flash — re-run with --build." >&2
+	exit 1
+fi
+
 echo ">>> flashing over USB"
 python3 "$DIR/flash_usb.py"
 

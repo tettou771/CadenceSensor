@@ -81,7 +81,12 @@ BUILD_ASSERT(CSC_MEAS_LEN == 5,
  * CONFIG_BT_DEVICE_NAME cannot silently truncate the advertised name. */
 static char s_name[CONFIG_BT_DEVICE_NAME_MAX + 1];
 static char s_addr[BT_ADDR_LE_STR_LEN];
-static bool s_connected;
+/* Links currently up, 0..CONFIG_BT_MAX_CONN. A count rather than a flag
+ * because this sensor accepts more than one collector at a time — see the note
+ * on CONFIG_BT_MAX_CONN in prj.conf for why that is not optional on BLE.
+ * Written only from the connection callbacks, which all run on the same
+ * thread, and read elsewhere as a single byte. */
+static uint8_t s_conn_count;
 static bool s_advertising;
 static bool s_subscribed;
 
@@ -91,6 +96,9 @@ static void meas_ccc_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
 	ARG_UNUSED(attr);
 
+	/* Zephyr passes the AGGREGATE of every connection's CCC config, not the
+	 * one that just changed, so this stays correct with two collectors
+	 * attached: it means "at least one of them wants notifications". */
 	s_subscribed = (value == BT_GATT_CCC_NOTIFY);
 	LOG_INF("CSC notifications %s", s_subscribed ? "on" : "off");
 }
@@ -137,7 +145,7 @@ void ble_csc_notify(void)
 	struct cadence_state st;
 	uint8_t pdu[CSC_MEAS_LEN];
 
-	if (!s_connected || !s_subscribed) {
+	if (s_conn_count == 0 || !s_subscribed) {
 		return;
 	}
 
@@ -150,6 +158,9 @@ void ble_csc_notify(void)
 	sys_put_le16(st.revs, &pdu[CSC_CRANK_OFFSET]);
 	sys_put_le16(st.last_event_1024, &pdu[CSC_CRANK_OFFSET + 2]);
 
+	/* NULL fans the notification out to every connection that has enabled
+	 * them, so a head unit and a phone each get the same measurement
+	 * without this having to track how many collectors are attached. */
 	int err = bt_gatt_notify(NULL, CSC_MEAS_ATTR, pdu, sizeof(pdu));
 
 	if (err && err != -ENOTCONN) {
@@ -183,6 +194,17 @@ static struct bt_data sd[] = {
 void ble_csc_set_advertising(bool on)
 {
 	int err;
+
+	/* Asking to be findable with every connection slot already taken is not
+	 * an error, it is just nothing to do — the controller would reject the
+	 * start for want of a connection object and main() calls this once a
+	 * second, so letting it through would fill the log at 1 Hz. Folding it
+	 * into `on` here rather than gating the call site keeps the caller
+	 * expressing intent ("the bike is moving, be findable") and leaves this
+	 * file the only thing that has to know how many links are free. */
+	if (on && s_conn_count >= CONFIG_BT_MAX_CONN) {
+		on = false;
+	}
 
 	if (on == s_advertising) {
 		return;
@@ -222,7 +244,12 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	 * because it is now connected, on failure because the attempt consumed
 	 * the advertiser. Clearing the flag unconditionally is what lets the
 	 * once-a-second call in main() start it again; leaving it set on the
-	 * failure path would make the sensor go quiet until the next reboot. */
+	 * failure path would make the sensor go quiet until the next reboot.
+	 *
+	 * With a connection slot still free, that same restart is also the only
+	 * thing that lets a SECOND collector find the sensor: a peripheral stops
+	 * advertising the instant it is connected, so without this the first
+	 * device to connect would keep the sensor to itself. */
 	s_advertising = false;
 
 	if (err) {
@@ -230,25 +257,39 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	s_connected = true;
+	s_conn_count++;
 
 	/* A connected head unit expects measurements to keep arriving even
 	 * when the rider stops pedalling — that is how it displays 0 rather
 	 * than freezing on the last number. */
 	cadence_hold_awake(CADENCE_HOLD_BLE, true);
 
-	LOG_INF("connected");
+	LOG_INF("connected (%u/%u)", s_conn_count, CONFIG_BT_MAX_CONN);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	ARG_UNUSED(conn);
 
-	s_connected = false;
-	s_subscribed = false;
-	cadence_hold_awake(CADENCE_HOLD_BLE, false);
+	if (s_conn_count > 0) {
+		s_conn_count--;
+	}
 
-	LOG_INF("disconnected (0x%02x)", reason);
+	/* Only the LAST collector leaving releases the hold. Dropping it
+	 * whenever either link goes would park the sampler while the other one
+	 * is still subscribed and waiting for its measurement every second.
+	 *
+	 * s_subscribed is normally maintained by meas_ccc_changed(), which
+	 * Zephyr calls as it clears the departing connection's CCC config;
+	 * clearing it here too is unconditionally right once nothing is
+	 * connected, and does not depend on the order of the two callbacks. */
+	if (s_conn_count == 0) {
+		s_subscribed = false;
+		cadence_hold_awake(CADENCE_HOLD_BLE, false);
+	}
+
+	LOG_INF("disconnected (0x%02x, %u/%u left)", reason, s_conn_count,
+		CONFIG_BT_MAX_CONN);
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
@@ -323,18 +364,19 @@ int ble_csc_init(void)
 
 	bt_addr_le_to_str(&addr, s_addr, sizeof(s_addr));
 
-	/* This board cannot measure its own battery: BAT_CHECK is wired to
-	 * P0.09, and the nRF52840's ADC inputs are P0.02-P0.05 and P0.28-P0.31
-	 * only. It is a v1.0/v1.1 layout error, documented in HARDWARE.md. A
-	 * board that routes BAT_CHECK to an AIN pin needs only to start calling
-	 * ble_csc_set_battery() with the real value.
+	/* Seed the Battery Service with a DELIBERATELY ODD CONSTANT, which
+	 * main() then overwrites within a second on any board that can actually
+	 * measure itself (see src/battery.c).
 	 *
-	 * Until then the reported level is a DELIBERATELY ODD CONSTANT, and 50
-	 * rather than 100 for a specific reason: 100 % is what a host shows
+	 * 50 rather than 100 for a specific reason: 100 % is what a host shows
 	 * when it has no battery information at all, so it is indistinguishable
-	 * from the Battery Service not being read. 50 % cannot be confused with
-	 * a default — if a head unit shows half a battery, the plumbing works
-	 * and only the measurement is missing. */
+	 * from the Battery Service never being written. 50 % cannot be confused
+	 * with a default — a head unit showing half a battery means the
+	 * plumbing works and only the measurement is missing.
+	 *
+	 * Which is exactly what it still means on the bring-up board, where
+	 * BAT_CHECK landed on P0.09 and the nRF52840's analog inputs are
+	 * P0.02-P0.05 and P0.28-P0.31 only. There the 50 % simply stays. */
 	ble_csc_set_battery(BATTERY_DEBUG_PERCENT);
 
 	LOG_INF("BLE up as %s (%s)", s_name, s_addr);
@@ -344,7 +386,12 @@ int ble_csc_init(void)
 
 bool ble_csc_is_connected(void)
 {
-	return s_connected;
+	return s_conn_count > 0;
+}
+
+uint8_t ble_csc_conn_count(void)
+{
+	return s_conn_count;
 }
 
 bool ble_csc_is_advertising(void)

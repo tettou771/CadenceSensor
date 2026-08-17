@@ -1,0 +1,238 @@
+// Copyright (c) 2026
+// SPDX-License-Identifier: Apache-2.0
+//
+// Cadence sensor PCB v1 — the purpose-built board (KiCad/BikeSensor), 15 x 33
+// mm, MDBT50Q-1MV2 / nRF52840 with an LSM6DSV over SPI.
+//
+// Differences from the cadence_rft bring-up target, all of them real:
+//
+//   LEDs        red P0.30 / blue P0.31, cathodes to ground so ACTIVE_HIGH.
+//               There is no green: this board carries two LEDs, not an RGB.
+//               (D8 is a third LED but it is the charger's status output and
+//               is not reachable from the MCU.)
+//   power       the 3.3 V rail is switched. See soft-latch-gpios below.
+//   BAT_CHECK   P0.28, which unlike the bring-up board's P0.09 IS an analog
+//               input (AIN4), so this board can finally measure its own
+//               battery. Not yet read by the firmware.
+//
+// Everything else — SPI pins, both IMU interrupts, the crystal, USB, SWD — is
+// identical to the bring-up board, which is why src/ needed no changes.
+//
+// See HARDWARE.md for the full pin table.
+
+/dts-v1/;
+#include <nordic/nrf52840_qiaa.dtsi>
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/adc/nrf-saadc.h>
+#include "cadence_v1-pinctrl.dtsi"
+
+/ {
+	model = "Cadence sensor PCB v1";
+	compatible = "nordic,cadence-v1";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,console = &cdc_acm_uart0;      /* diagnostics console  */
+		zephyr,uart-mcumgr = &cdc_acm_uart1;  /* SMP firmware updates */
+		/* nrf52840.dtsi points this at &cryptocell, which we disable
+		 * below — the plain RNG peripheral is a hardware TRNG too, and
+		 * the BLE stack's entropy needs are modest. */
+		zephyr,entropy = &rng;
+	};
+
+	/* Two discrete LEDs, D5 (red) and D3 (blue), each with its cathode to
+	 * ground through a series resistor — so ACTIVE_HIGH here, the opposite
+	 * of the common-anode RGB part on the bring-up board. Getting this
+	 * backwards is not merely cosmetic on a battery device: an inverted
+	 * ACTIVE_LOW spec would leave both LEDs lit whenever the firmware
+	 * believes them off, which on this design is milliamps against a
+	 * microamp budget. */
+	leds {
+		compatible = "gpio-leds";
+		led_r: led_red {
+			gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
+			label = "LED red";
+		};
+		led_b: led_blue {
+			gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+			label = "LED blue";
+		};
+	};
+
+	aliases {
+		led-red = &led_r;
+		led-blue = &led_b;
+		watchdog0 = &wdt0;
+	};
+
+	zephyr,user {
+		/* LSM6DSV interrupt lines, driven by our own driver (no Zephyr
+		 * sensor driver — see src/lsm6dsv.c for why). INT1 carries
+		 * wake-up, which is what pulls the sampler out of its idle
+		 * state. */
+		imu-int1-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+		imu-int2-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+
+		/* THE BOARD'S OWN POWER SWITCH.
+		 *
+		 * The 3.3 V LDO (U9, TPS7A0233) has an enable pin held up by
+		 * either of two things: the momentary button SW2 through D2,
+		 * or this GPIO through R12. The button alone cannot keep the
+		 * board running — release it with this pin low and the supply
+		 * collapses, taking the MCU with it. So asserting the latch is
+		 * not a nicety, it is the difference between a board that runs
+		 * and a board that only runs while a finger is on it.
+		 *
+		 * sw-read-gpios is the other side of the same circuit: the
+		 * button voltage divided 100k/330k, high while pressed. It is
+		 * what lets the firmware distinguish "a human turned this on"
+		 * from "something leaked onto the enable node". */
+		soft-latch-gpios = <&gpio1 11 GPIO_ACTIVE_HIGH>;
+		sw-read-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+
+		/* BAT_CHECK on P0.28 = AIN4. The bring-up board wired the same
+		 * signal to P0.09, which has no analog function at all, so this
+		 * property is the difference between a board that can report
+		 * its battery and one that cannot. src/battery.c keys off it. */
+		io-channels = <&adc 4>;
+
+		/* R10 + R11, both 1 M: the pin sees half the pack. Kept here
+		 * rather than in the C so the divider and the ADC channel are
+		 * described in the same place, and changing the resistors on a
+		 * future board does not mean editing a driver. */
+		battery-divider-num = <2>;
+		battery-divider-den = <1>;
+	};
+};
+
+/* SAADC for BAT_CHECK.
+ *
+ * Internal 0.6 V reference with 1/6 gain puts full scale at 3.6 V, and the
+ * divider halves a 4.2 V pack to 2.1 V, so the whole usable range lands
+ * comfortably inside it with no clipping at the top.
+ *
+ * 40 us acquisition is not a round number picked for luck: the source is
+ * R10 || R11 = 500 kohm, and the nRF52840 SAADC's own table allows up to
+ * 800 kohm at exactly this setting. Shortening it would leave the sampling
+ * capacitor unable to charge and would read low.
+ */
+&adc {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@4 {
+		reg = <4>;
+		zephyr,gain = "ADC_GAIN_1_6";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40)>;
+		zephyr,input-positive = <NRF_SAADC_AIN4>;
+		zephyr,resolution = <12>;
+	};
+};
+
+/* DC/DC regulator: this runs off a battery on a crank arm and advertises
+ * whenever the bike is moving, so the ~40% saving on radio TX current is the
+ * single biggest battery win available. */
+&reg1 {
+	regulator-initial-mode = <NRF5X_REG_MODE_DCDC>;
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+/* SPIM3 — LSM6DSV 6-axis IMU. CS is P1.09 on this PCB. */
+&spi3 {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	max-frequency = <DT_FREQ_M(8)>;
+	pinctrl-0 = <&spi3_default>;
+	pinctrl-1 = <&spi3_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+
+	lsm6dsv: lsm6dsv@0 {
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(8)>;
+		label = "LSM6DSV";
+	};
+};
+
+/* Two USB CDC-ACM endpoints, deliberately split:
+ *   uart0 = the human console (status, live cadence, raw accel)
+ *   uart1 = mcumgr SMP, i.e. how new firmware gets in over the USB cable
+ * Keeping them apart means a firmware upload never has to fight the console
+ * for the same byte stream, and a chatty console can never corrupt an upload.
+ */
+zephyr_udc0: &usbd {
+	compatible = "nordic,nrf-usbd";
+	status = "okay";
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+	cdc_acm_uart1: cdc_acm_uart1 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+/* Not populated / not used by the cadence sensor. */
+&qspi {
+	status = "disabled";
+};
+
+&i2c1 {
+	status = "disabled";
+};
+
+&cryptocell {
+	status = "disabled";
+};
+
+&nfct {
+	status = "disabled";
+};
+
+/* Internal flash layout — MCUboot + two image slots + NVS.
+ * Kept identical to the bring-up board so an image built for one can be
+ * flashed to the other without moving the NVS contents.
+ * pm_static.yml pins the same numbers for the Partition Manager. */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x0 0x20000>; /* 128 KB */
+		};
+		slot0_partition: partition@20000 {
+			label = "image-0";
+			reg = <0x20000 0x68000>; /* 416 KB */
+		};
+		slot1_partition: partition@88000 {
+			label = "image-1";
+			reg = <0x88000 0x68000>; /* 416 KB */
+		};
+		storage_partition: partition@f0000 {
+			label = "storage";
+			reg = <0xf0000 0x10000>; /* 64 KB NVS */
+		};
+	};
+};

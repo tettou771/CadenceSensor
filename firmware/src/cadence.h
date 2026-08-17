@@ -56,7 +56,13 @@ struct cadence_state {
 	uint16_t last_event_1024;  /* time of that revolution, 1/1024 s      */
 
 	uint16_t rpm_x10;          /* smoothed, for humans; 0 when stopped   */
-	uint16_t amp_mg;           /* in-plane AC amplitude; ~1000 = healthy */
+	/* In-plane AC amplitude: the radius of the circle gravity traces, NOT
+	 * the strength of gravity. A still sensor sees a constant gravity
+	 * vector, so this decays to ~0 within a couple of seconds of stopping
+	 * and only means anything while the crank is turning. Turning, ~1000
+	 * says the rotation plane contains gravity, i.e. the sensor is mounted
+	 * square to the crank; a persistently smaller number is tilt. */
+	uint16_t amp_mg;
 	bool     rotating;         /* a revolution within CADENCE_STOP_MS    */
 	bool     idle;             /* sampler parked, waiting on INT1        */
 	uint8_t  plane[2];         /* axes the detector picked (0=X,1=Y,2=Z) */
