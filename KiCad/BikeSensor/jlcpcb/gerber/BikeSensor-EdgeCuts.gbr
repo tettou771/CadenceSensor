@@ -1,11 +1,11 @@
 %TF.GenerationSoftware,KiCad,Pcbnew,10.0.5*%
-%TF.CreationDate,2026-08-06T14:01:44+09:00*%
-%TF.ProjectId,BikeTracker,42696b65-5472-4616-936b-65722e6b6963,rev?*%
+%TF.CreationDate,2026-08-18T12:56:33+09:00*%
+%TF.ProjectId,BikeSensor,42696b65-5365-46e7-936f-722e6b696361,rev?*%
 %TF.SameCoordinates,Original*%
 %TF.FileFunction,Profile,NP*%
 %FSLAX46Y46*%
 G04 Gerber Fmt 4.6, Leading zero omitted, Abs format (unit mm)*
-G04 Created by KiCad (PCBNEW 10.0.5) date 2026-08-06 14:01:44*
+G04 Created by KiCad (PCBNEW 10.0.5) date 2026-08-18 12:56:33*
 %MOMM*%
 %LPD*%
 G01*

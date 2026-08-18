@@ -815,13 +815,13 @@
         "uuid": "a119662d-6a69-4a30-bf8f-7f32d744a0f2"
       }
     ],
-    "used_designators": "#PWR7,#PWR21,#PWR24,#U$9,#U$13,U8,H1-2,TP1-6",
+    "used_designators": "R16-17,D4,D6,#PWR7,#PWR21,#PWR24-25,H1-2,#U$9,#U$13,#U$19,U8,TP1-6",
     "variants": []
   },
   "sheets": [
     [
       "a119662d-6a69-4a30-bf8f-7f32d744a0f2",
-      "BikeTracker"
+      "BikeSensor"
     ],
     [
       "3774056c-882f-41e0-8081-2e90c68d5b11",
