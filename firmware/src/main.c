@@ -329,6 +329,38 @@ static bool usb_start(void)
 	return true;
 }
 
+/* Tear USB back down when the cable goes away.
+ *
+ * Leaving it up was a single omission with three separate consequences, none
+ * of which look related from the outside:
+ *
+ *   the pack drains. An enabled USB device keeps the peripheral and the high
+ *   frequency crystal alive whether or not a host is there, which is hundreds
+ *   of microamps against a budget whose entire standby figure is eight. A
+ *   sensor that had been plugged in once measured flat within days.
+ *
+ *   the console never comes back. usb_present latching true means the "cable
+ *   appeared" branch in the main loop can never fire again, so a re-inserted
+ *   cable depends entirely on the peripheral choosing to re-enumerate itself.
+ *   Sometimes it does. When it does not there is no way in at all, short of a
+ *   debug probe, because the board latches its own power and cannot be made to
+ *   reboot without the very console that is missing.
+ *
+ *   the blue LED blinks on battery. The per-revolution pulse is gated on
+ *   usb_present precisely so it costs nothing on a ride, and a stuck flag
+ *   quietly removes that gate. This is the symptom that gave the whole thing
+ *   away: an LED flashing where it had been designed not to.
+ */
+static void usb_stop(void)
+{
+	if (!usb_present) {
+		return;
+	}
+
+	usb_disable();
+	usb_present = false;
+}
+
 static void console_init(void)
 {
 	uint32_t dtr = 0;
@@ -633,6 +665,8 @@ int main(void)
 		if (vbus && !usb_present) {
 			usb_start();
 			print_help();
+		} else if (!vbus && usb_present) {
+			usb_stop();
 		}
 
 		/* Track the hold against VBUS ITSELF, not against the
