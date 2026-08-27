@@ -66,6 +66,22 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
  * enough that typing into the console feels responsive. */
 #define TICK_MS 100
 
+/* How long USB stays up with nothing attached to either endpoint.
+ *
+ * A cable does not mean a host. The common case by far is a charger, or a PC
+ * that nobody has opened a terminal on, and USB costs about 1.3 mA - which on
+ * this board comes out of the PACK, not out of the cable: the LDO's input is
+ * the charger's output, and once charging terminates the charger stops
+ * sourcing, so the sensor quietly eats its own battery while apparently
+ * plugged in. Left overnight that is most of a tenth of the cell, and the next
+ * ride starts at 90 %.
+ *
+ * Generous on purpose. Five minutes of USB is 0.1 mAh, 0.07 % of the pack, and
+ * a firmware update needs somewhere to fit. Unplugging and replugging always
+ * brings it back.
+ */
+#define USB_IDLE_MS (5 * 60 * 1000)
+
 /* How often to sample the pack. A battery cannot move faster than this, the
  * Battery Service is advisory, and each read is eight SAADC conversions. */
 #define BATTERY_PERIOD_S 60
@@ -106,6 +122,7 @@ static const struct gpio_dt_spec sw_read =
 	GPIO_DT_SPEC_GET_OR(DT_PATH(zephyr_user), sw_read_gpios, {0});
 
 static const struct device *console_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+static const struct device *smp_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_uart_mcumgr));
 
 static struct gpio_callback imu_int1_cb;
 
@@ -114,6 +131,8 @@ static atomic_t last_motion_ms;
 static atomic_t motion_events;
 
 static bool usb_present;
+static bool usb_idled;
+static uint32_t usb_idle_since;
 static bool int1_ok;
 static bool usb_held;
 static bool stream_cadence;
@@ -325,6 +344,7 @@ static bool usb_start(void)
 		return false;
 	}
 	usb_present = true;
+	usb_idle_since = k_uptime_get_32();
 
 	return true;
 }
@@ -351,6 +371,32 @@ static bool usb_start(void)
  *   quietly removes that gate. This is the symptom that gave the whole thing
  *   away: an LED flashing where it had been designed not to.
  */
+/* Is anybody actually there?
+ *
+ * DTR goes high when a host opens the port, which is exactly the distinction
+ * that matters: a charger never raises it, and neither does a PC until someone
+ * runs a terminal or a flashing tool.
+ *
+ * BOTH endpoints, and that is not symmetry for its own sake. tools/flash_usb.py
+ * talks to the SMP endpoint and never opens the console, so watching only the
+ * console would tear USB down in the middle of a firmware update.
+ */
+static bool host_attached(void)
+{
+	uint32_t dtr = 0;
+
+	if (uart_line_ctrl_get(console_dev, UART_LINE_CTRL_DTR, &dtr) == 0 && dtr) {
+		return true;
+	}
+
+	dtr = 0;
+	if (uart_line_ctrl_get(smp_dev, UART_LINE_CTRL_DTR, &dtr) == 0 && dtr) {
+		return true;
+	}
+
+	return false;
+}
+
 static void usb_stop(void)
 {
 	if (!usb_present) {
@@ -445,6 +491,14 @@ static void print_status(void)
 		       !gpio_is_ready_dt(&sw_read) ? "?" :
 		       gpio_pin_get_dt(&sw_read) == 1 ? "down" : "up");
 	}
+	/* Which of the three USB states this is, because "no console" has
+	 * three different causes and they need different reactions: no cable,
+	 * a cable nobody is talking through, or a cable whose console timed
+	 * out and needs a replug. */
+	printk("usb       : %s\n",
+	       !vbus_present()  ? "no cable" :
+	       !usb_present     ? "cable, USB off (idle) - replug to wake it" :
+	       host_attached()  ? "up, host attached" : "up, no host yet");
 	printk("uptime    : %u s\n", (uint32_t)(k_uptime_get() / 1000));
 }
 
@@ -662,23 +716,46 @@ int main(void)
 		 * a sensor whose interrupt is misbehaving. */
 		bool vbus = vbus_present();
 
-		if (vbus && !usb_present) {
-			usb_start();
-			print_help();
-		} else if (!vbus && usb_present) {
+		uint32_t now = k_uptime_get_32();
+
+		if (!vbus) {
+			/* Cable gone. Tear USB down and re-arm, so the next
+			 * insertion always gets a console even if the last one
+			 * timed out. */
+			if (usb_present) {
+				usb_stop();
+			}
+			usb_idled = false;
+		} else if (!usb_present) {
+			/* usb_idled is what stops this from immediately undoing
+			 * the timeout below and spinning. */
+			if (!usb_idled) {
+				usb_start();
+				print_help();
+			}
+		} else if (host_attached()) {
+			usb_idle_since = now;
+		} else if ((now - usb_idle_since) > USB_IDLE_MS) {
 			usb_stop();
+			usb_idled = true;
+			LOG_INF("USB idle - shutting it down to save the pack");
 		}
 
-		/* Track the hold against VBUS ITSELF, not against the
-		 * enumeration transition. A board that boots with the cable
+		/* Hold the sampler awake while USB is UP, tracked as a level
+		 * rather than an edge. A board that boots with the cable
 		 * already plugged in has usb_present set by console_init()
 		 * before this loop ever runs, so an edge-triggered version
 		 * never fires and the sampler parks with a console attached —
 		 * which is exactly the case you are in whenever you are trying
-		 * to watch it work. */
-		if (vbus != usb_held) {
-			cadence_hold_awake(CADENCE_HOLD_USB, vbus);
-			usb_held = vbus;
+		 * to watch it work.
+		 *
+		 * Keyed on usb_present, not on VBUS: once USB has timed out
+		 * there is nobody watching, and keeping the sampler running for
+		 * an audience that went home is the whole thing this is
+		 * supposed to stop. */
+		if (usb_present != usb_held) {
+			cadence_hold_awake(CADENCE_HOLD_USB, usb_present);
+			usb_held = usb_present;
 		}
 
 		console_poll();
