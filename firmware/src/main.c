@@ -140,6 +140,20 @@ static uint32_t seen_revs;
 static uint16_t batt_mv;
 static uint8_t batt_flat;
 
+/* Seconds since boot, and how many of them the sampler was awake for and the
+ * radio was advertising for.
+ *
+ * The instrument this investigation was missing. A week of "the pack went from
+ * full to a tenth" says only that something is wrong; it cannot say WHAT,
+ * because getting from a voltage to a current runs through a discharge curve
+ * and an assumed capacity, and being wrong about either changes the answer by
+ * more than the thing being looked for. These two numbers are measured
+ * directly and settle it: a sensor that parked properly and stayed quiet has
+ * single-digit percentages here, and one that never slept has a hundred. */
+static uint32_t duty_secs;
+static uint32_t duty_awake;
+static uint32_t duty_adv;
+
 /* --- LEDs ------------------------------------------------------------- */
 
 static void leds_init(void)
@@ -482,7 +496,16 @@ static void print_status(void)
 	       st.plane[0], st.plane[1], st.amp_mg,
 	       st.rotating ? "1000 = ideal" : "only meaningful while turning");
 	printk("accel mg  : %d %d %d\n", mg[0], mg[1], mg[2]);
-	printk("motion evt: %u\n", (uint32_t)atomic_get(&motion_events));
+	/* The age matters more than the count. recently_moved() holds
+	 * advertising up for ADV_HOLD_MS after the last interrupt, so this is
+	 * what says whether the radio has any business being on. */
+	printk("motion evt: %u (last %u s ago)\n",
+	       (uint32_t)atomic_get(&motion_events),
+	       (k_uptime_get_32() -
+		(uint32_t)atomic_get(&last_motion_ms)) / 1000);
+	printk("duty      : sampler %u %% / advertising %u %%  (over %u s)\n",
+	       duty_secs ? duty_awake * 100 / duty_secs : 0,
+	       duty_secs ? duty_adv * 100 / duty_secs : 0, duty_secs);
 	if (gpio_is_ready_dt(&soft_latch)) {
 		/* On a board that switches its own rail, "why am I still on"
 		 * is a real question with a real answer. */
@@ -838,6 +861,16 @@ int main(void)
 		 * ble_csc_set_advertising() is what knows when the slots are
 		 * full; this only says whether the bike is worth finding. */
 		ble_csc_set_advertising(st.rotating || recently_moved());
+
+		/* Counted AFTER the call above, so the sample describes the
+		 * state this second is actually spent in. */
+		duty_secs++;
+		if (!st.idle) {
+			duty_awake++;
+		}
+		if (ble_csc_is_advertising()) {
+			duty_adv++;
+		}
 
 		if (stream_cadence) {
 			printk("rpm %u.%u  revs %u  amp %4u mg  plane %u,%u  %s%s\n",

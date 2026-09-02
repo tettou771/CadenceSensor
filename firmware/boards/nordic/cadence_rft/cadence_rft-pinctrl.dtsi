@@ -6,8 +6,8 @@
 // firmware differs.
 
 &pinctrl {
-	/* SPIM3 — LSM6DSV (MOSI P0.06, MISO P0.04, SCK P0.08; CS is a GPIO) */
-	spi3_default: spi3_default {
+	/* SPIM1 — LSM6DSV (MOSI P0.06, MISO P0.04, SCK P0.08; CS is a GPIO) */
+	spi1_default: spi1_default {
 		group1 {
 			psels = <NRF_PSEL(SPIM_MOSI, 0, 6)>,
 				<NRF_PSEL(SPIM_MISO, 0, 4)>,
@@ -15,7 +15,7 @@
 		};
 	};
 
-	spi3_sleep: spi3_sleep {
+	spi1_sleep: spi1_sleep {
 		group1 {
 			psels = <NRF_PSEL(SPIM_MOSI, 0, 6)>,
 				<NRF_PSEL(SPIM_MISO, 0, 4)>,

@@ -56,20 +56,40 @@ bool battery_present(void)
 	return ready;
 }
 
-/* Open-circuit voltage against state of charge for a single lithium-polymer
- * cell, descending. Interpolated linearly between neighbours.
+/* Terminal voltage against state of charge for a single lithium-polymer cell,
+ * descending. Interpolated linearly between neighbours.
  *
- * The shape is the point of the table. Nearly two thirds of the usable charge
- * sits in the 200 mV between 3.9 and 3.7 V, so the curve is deliberately dense
- * there and coarse at both ends, where a small voltage change means very
- * little (top) or the cell is about to cut out anyway (bottom). */
+ * MEASURED, not assumed. These points come from a full discharge of an EEMB
+ * 150 mAh cell of the same class on another board in this workshop, logged over
+ * 12.342 h until cutoff, and shared by the tdk-viewer session. The percentages
+ * are that run's remaining time as a fraction of the whole, which is the same
+ * thing as remaining charge because the load never changed.
+ *
+ * What it replaced was a table written from general knowledge of lithium
+ * chemistry, and it was wrong in the worst possible place: it put 3700 mV at
+ * 10 % where the real cell still had 60 %. The flattest part of the curve had
+ * been given the steepest slope, so a pack a little over half full reported
+ * itself nearly dead - and a drain being estimated from the reported figure
+ * came out more than twice its real size.
+ *
+ * The other board discharged at roughly C/12 against this one's C/350, which
+ * does not matter here: 12 mA through a cell of 200-400 mohm is 2-5 mV of IR
+ * drop, so both curves are open-circuit voltage in all but name. Its ABSOLUTE
+ * RATE is not transferable, only the shape.
+ *
+ * The 3600 mV point is the least certain of these - it is the flattest part of
+ * the curve, where the source data's two derivations disagreed by 5 % and a
+ * 20 mV measurement wobble moves the answer by several points. Everything else
+ * agreed to within 1.5 %.
+ */
 static const struct {
 	uint16_t mv;
 	uint8_t pct;
 } curve[] = {
-	{4200, 100}, {4100, 90}, {4020, 80}, {3960, 70}, {3900, 60},
-	{3850, 50}, {3810, 40}, {3780, 30}, {3750, 20}, {3700, 10},
-	{3600,   5}, {3300,  0},
+	{4180, 100}, {4100, 98}, {4050, 94}, {4000, 90}, {3950, 84},
+	{3900,  80}, {3850, 75}, {3800, 70}, {3750, 65}, {3700, 60},
+	{3650,  54}, {3600, 45}, {3500, 19}, {3450, 12}, {3400,  7},
+	{3300,   3}, {3000,  0},
 };
 
 static uint8_t mv_to_percent(uint16_t mv)

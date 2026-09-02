@@ -102,13 +102,13 @@
 	status = "okay";
 };
 
-/* SPIM3 — LSM6DSV 6-axis IMU. CS is P1.09 on this PCB. */
-&spi3 {
+/* SPIM1 — LSM6DSV 6-axis IMU. CS is P1.09 on this PCB. */
+&spi1 {
 	compatible = "nordic,nrf-spim";
 	status = "okay";
 	max-frequency = <DT_FREQ_M(8)>;
-	pinctrl-0 = <&spi3_default>;
-	pinctrl-1 = <&spi3_sleep>;
+	pinctrl-0 = <&spi1_default>;
+	pinctrl-1 = <&spi1_sleep>;
 	pinctrl-names = "default", "sleep";
 	cs-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
 

@@ -156,13 +156,26 @@
 	status = "okay";
 };
 
-/* SPIM3 — LSM6DSV 6-axis IMU. CS is P1.09 on this PCB. */
-&spi3 {
+/* SPIM1 — LSM6DSV 6-axis IMU. CS is P1.09 on this PCB.
+ *
+ * SPIM1 and not SPIM3, which is what this used to be. nRF52840 anomaly 195 has
+ * SPIM3 go on drawing several hundred microamps after use, and the workaround
+ * in nrfx (a write to 0x4002F004) lives inside nrfx_spim_uninit() — a function
+ * Zephyr only reaches when the device is suspended, which needs system power
+ * management this application does not run. So the fix shipped in the SDK
+ * never executed, and a parked sensor measured 554 uA instead of the ~10 uA it
+ * was designed for. That one peripheral was most of a week's battery.
+ *
+ * Nothing is lost by moving. SPIM3's advantage is 32 MHz; this bus runs at 8,
+ * which SPIM0/1/2 reach, and it uses none of SPIM3's extended features. i2c1
+ * shares the instance and is disabled below, so instance 1 is free.
+ */
+&spi1 {
 	compatible = "nordic,nrf-spim";
 	status = "okay";
 	max-frequency = <DT_FREQ_M(8)>;
-	pinctrl-0 = <&spi3_default>;
-	pinctrl-1 = <&spi3_sleep>;
+	pinctrl-0 = <&spi1_default>;
+	pinctrl-1 = <&spi1_sleep>;
 	pinctrl-names = "default", "sleep";
 	cs-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
 
