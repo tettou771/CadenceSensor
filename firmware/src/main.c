@@ -32,6 +32,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/reboot.h>
+#include <zephyr/sys/poweroff.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/bluetooth/services/bas.h>
 #include <hal/nrf_power.h>
@@ -95,6 +96,24 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
  * the bottom of the curve is not going to climb back out in five minutes. */
 #define BATTERY_FLAT_READINGS 5
 
+/* How long everything has to stay quiet before the sensor stops being a running
+ * computer and becomes a switch waiting to be flipped.
+ *
+ * System OFF takes the parked draw from 30 uA to about 8, because it stops
+ * paying for the parts of "idle" that are not free: the core, the clocks and
+ * the Bluetooth stack all go away, and what is left is the accelerometer still
+ * watching for motion, the battery divider, the protection IC and a sleeping
+ * core. Measured, not projected. Roughly doubles the life of a charge.
+ *
+ * Ten minutes rather than the two that advertising uses, and the margin costs
+ * almost nothing: 30 uA for ten minutes is 5 uAh, so even waking once an hour
+ * all year spends under a tenth of the pack. What it buys is the certainty that
+ * a rider stopped at a long light, or fixing a puncture, is never switched off
+ * underneath them - the sensor is asleep only when nothing has touched it for
+ * longer than any pause in a ride.
+ */
+#define SYSTEM_OFF_MS (10 * 60 * 1000)
+
 static const struct gpio_dt_spec led_r = GPIO_DT_SPEC_GET(DT_ALIAS(led_red), gpios);
 static const struct gpio_dt_spec led_b = GPIO_DT_SPEC_GET(DT_ALIAS(led_blue), gpios);
 
@@ -131,6 +150,7 @@ static atomic_t last_motion_ms;
 static atomic_t motion_events;
 
 static bool usb_present;
+static uint32_t reset_reason;
 static bool usb_idled;
 static uint32_t usb_idle_since;
 static bool int1_ok;
@@ -197,6 +217,22 @@ static bool vbus_present(void)
 	return nrf_power_usbregstatus_vbusdet_get(NRF_POWER);
 }
 
+/* Why this boot happened. Read once and cleared, because the register latches
+ * every reason since the last clear and would otherwise still be reporting the
+ * power-on that happened days ago. */
+static void reset_reason_capture(void)
+{
+	reset_reason = NRF_POWER->RESETREAS;
+	NRF_POWER->RESETREAS = 0xffffffffUL;
+}
+
+/* Woken out of System OFF by the DETECT signal - which here can only mean the
+ * IMU's interrupt line, since nothing else is wired to wake us. */
+static bool woke_from_system_off(void)
+{
+	return (reset_reason & POWER_RESETREAS_OFF_Msk) != 0;
+}
+
 /* Decide whether this board has any business being powered on, and act on it.
  *
  * The v1 board gates its 3.3 V rail with an LDO whose enable pin is pulled up
@@ -246,14 +282,22 @@ static void power_latch_init(void)
 		pressed = gpio_pin_get_dt(&sw_read) == 1;
 	}
 
-	latched = pressed || vbus_present();
+	/* Three reasons, and the third is the one that makes System OFF work at
+	 * all: waking from it IS a reset, so this function runs again with no
+	 * finger on the button and no cable attached. Without this the sensor
+	 * would wake, get as far as here, decide it had no business being on,
+	 * and switch itself off again - which is exactly what the first attempt
+	 * did before RESETREAS was consulted. */
+	latched = pressed || vbus_present() || woke_from_system_off();
 
 	gpio_pin_configure_dt(&soft_latch, latched ? GPIO_OUTPUT_ACTIVE
 						   : GPIO_OUTPUT_INACTIVE);
 
-	LOG_INF("power latch %s (button %s, VBUS %s)",
+	LOG_INF("power latch %s (button %s, VBUS %s, resetreas 0x%08x%s)",
 		latched ? "held" : "RELEASED - powering off",
-		pressed ? "down" : "up", vbus_present() ? "yes" : "no");
+		pressed ? "down" : "up", vbus_present() ? "yes" : "no",
+		(unsigned int)reset_reason,
+		woke_from_system_off() ? " = woke from System OFF" : "");
 }
 
 /* Switch the board off, for real.
@@ -342,6 +386,53 @@ static bool recently_moved(void)
 	}
 
 	return (k_uptime_get_32() - last) < ADV_HOLD_MS;
+}
+
+/* Drop to System OFF once nothing has happened for SYSTEM_OFF_MS.
+ *
+ * This is the deepest state the part has: the core, the clocks and the whole
+ * Bluetooth stack stop existing, and waking from it is a reset rather than a
+ * return. What keeps running is the accelerometer, still watching for the
+ * orientation change that will wake us, and the GPIO block - which matters
+ * twice over, because GPIO is also what holds the 3.3 V rail up. System OFF
+ * does not power GPIO down and PIN_CNF is retained, so the latch survives.
+ *
+ * INT1 has to be re-armed as a LEVEL interrupt on the way out. An edge
+ * interrupt runs through GPIOTE, and GPIOTE is one of the peripherals System
+ * OFF switches off; the only thing that can wake the chip is the pin's own
+ * SENSE/DETECT circuit, which a level interrupt is what configures. Get this
+ * wrong and the sensor sleeps forever.
+ *
+ * The guards are about never sleeping somewhere we cannot be woken from. If
+ * INT1 was not armed, or there is no IMU at all, then nothing is watching the
+ * pin and System OFF would be permanent - that case is already held awake by
+ * CADENCE_HOLD_FAULT, and checked again here because the cost of being wrong
+ * is a sensor that never comes back.
+ */
+static void maybe_system_off(const struct cadence_state *st)
+{
+	if (!lsm6dsv_present() || !int1_ok || !gpio_is_ready_dt(&imu_int1)) {
+		return; /* nothing could wake us again */
+	}
+
+	/* Someone is watching, or something is happening. */
+	if (vbus_present() || ble_csc_conn_count() > 0 || !st->idle) {
+		return;
+	}
+
+	if ((k_uptime_get_32() - (uint32_t)atomic_get(&last_motion_ms)) <
+	    SYSTEM_OFF_MS) {
+		return;
+	}
+
+	printk("\nnothing for %d min - System OFF. INT1 wakes it.\n",
+	       SYSTEM_OFF_MS / 60000);
+	k_msleep(50); /* let the console drain */
+
+	ble_csc_set_advertising(false);
+	(void)gpio_pin_interrupt_configure_dt(&imu_int1, GPIO_INT_LEVEL_ACTIVE);
+
+	sys_poweroff();
 }
 
 /* --- USB console ------------------------------------------------------ */
@@ -522,6 +613,10 @@ static void print_status(void)
 	       !vbus_present()  ? "no cable" :
 	       !usb_present     ? "cable, USB off (idle) - replug to wake it" :
 	       host_attached()  ? "up, host attached" : "up, no host yet");
+	/* Why the last boot happened, which after System OFF is the difference
+	 * between "somebody moved the bike" and "something went wrong". */
+	printk("boot      : resetreas 0x%08x%s\n", (unsigned int)reset_reason,
+	       woke_from_system_off() ? " (woke from System OFF)" : "");
 	printk("uptime    : %u s\n", (uint32_t)(k_uptime_get() / 1000));
 }
 
@@ -657,6 +752,7 @@ int main(void)
 
 	/* FIRST, before anything that can block or take time: on the v1 board
 	 * this is what keeps the 3.3 V rail up once the button is released. */
+	reset_reason_capture();
 	power_latch_init();
 
 	leds_init();
@@ -871,6 +967,8 @@ int main(void)
 		if (ble_csc_is_advertising()) {
 			duty_adv++;
 		}
+
+		maybe_system_off(&st);
 
 		if (stream_cadence) {
 			printk("rpm %u.%u  revs %u  amp %4u mg  plane %u,%u  %s%s\n",
