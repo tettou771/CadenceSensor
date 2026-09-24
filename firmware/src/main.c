@@ -155,6 +155,41 @@ static bool usb_idled;
 static uint32_t usb_idle_since;
 static bool int1_ok;
 static bool usb_held;
+static bool ble_held;
+
+/* --- lifetime accounting ---------------------------------------------- *
+ *
+ * Every wake from System OFF is a reset, so uptime and the duty counters
+ * describe only the current stretch — which is useless for the one question
+ * the field keeps asking: a pack went flat in eight days, WHERE did it go?
+ * Without an ammeter in series the answer has to come from the sensor itself,
+ * and the only thing it needs to report is how it spent its time.
+ *
+ * __noinit puts this outside the region the startup code zeroes, and the
+ * nRF52840 retains RAM through System OFF (RAM[n].POWER keeps its reset value,
+ * retention enabled, and nothing here clears it), so the totals survive being
+ * woken. They do NOT survive the rail actually collapsing — a flat battery, a
+ * disconnected cell, the latch released — which is exactly when they should
+ * start over, and the magic word is what notices.
+ */
+#define LIFETIME_MAGIC 0x43414431UL /* "CAD1" */
+
+static __noinit struct {
+	uint32_t magic;
+	uint32_t wakes;   /* System OFF -> awake transitions          */
+	uint32_t awake_s; /* seconds NOT in System OFF                */
+	uint32_t conn_s;  /* seconds with at least one collector up   */
+} lifetime;
+
+static void lifetime_init(void)
+{
+	if (lifetime.magic != LIFETIME_MAGIC) {
+		memset(&lifetime, 0, sizeof(lifetime));
+		lifetime.magic = LIFETIME_MAGIC;
+	}
+
+	lifetime.wakes++;
+}
 static bool stream_cadence;
 static uint32_t seen_revs;
 static uint16_t batt_mv;
@@ -415,13 +450,39 @@ static void maybe_system_off(const struct cadence_state *st)
 		return; /* nothing could wake us again */
 	}
 
-	/* Someone is watching, or something is happening. */
-	if (vbus_present() || ble_csc_conn_count() > 0 || !st->idle) {
-		return;
+	if (vbus_present()) {
+		return; /* on the cable: not our battery being spent */
 	}
 
 	if ((k_uptime_get_32() - (uint32_t)atomic_get(&last_motion_ms)) <
 	    SYSTEM_OFF_MS) {
+		return;
+	}
+
+	/* The crank has been still for ten minutes, so the ride is over and
+	 * this sensor has nothing left to say. A collector still holding the
+	 * link open does NOT get to veto that.
+	 *
+	 * It used to. `ble_csc_conn_count() > 0` was in the guard above, on the
+	 * reasoning that a live link means someone is watching — but a central
+	 * is under no obligation to ever let go, and an Apple Watch left in
+	 * radio range does not. The sensor then stayed awake indefinitely,
+	 * which is both the connection's own current and, through
+	 * CADENCE_HOLD_BLE, a sampler pinned at 60 Hz instead of 1.875 Hz.
+	 *
+	 * So hang up and come back next tick. Disconnection is asynchronous:
+	 * the callbacks land within a connection interval or two, the main loop
+	 * then releases CADENCE_HOLD_BLE, the sampler parks on its next sample,
+	 * and the tick after that finds every condition met. About a second in
+	 * all, and no new state to get wrong. */
+	if (ble_csc_conn_count() > 0) {
+		printk("\nquiet for %d min - hanging up on %u collector(s)\n",
+		       SYSTEM_OFF_MS / 60000, ble_csc_conn_count());
+		ble_csc_disconnect_all();
+		return;
+	}
+
+	if (!st->idle) {
 		return;
 	}
 
@@ -618,6 +679,12 @@ static void print_status(void)
 	printk("boot      : resetreas 0x%08x%s\n", (unsigned int)reset_reason,
 	       woke_from_system_off() ? " (woke from System OFF)" : "");
 	printk("uptime    : %u s\n", (uint32_t)(k_uptime_get() / 1000));
+	/* Since the pack was last connected, across every System OFF cycle.
+	 * "awake" is what costs: System OFF is a rounding error next to it, so
+	 * awake_s against wall-clock time since the last charge is the whole
+	 * battery story without an ammeter. */
+	printk("lifetime  : %u wakes, awake %u s, connected %u s\n",
+	       lifetime.wakes, lifetime.awake_s, lifetime.conn_s);
 }
 
 static void print_help(void)
@@ -754,6 +821,7 @@ int main(void)
 	 * this is what keeps the 3.3 V rail up once the button is released. */
 	reset_reason_capture();
 	power_latch_init();
+	lifetime_init();
 
 	leds_init();
 	console_init();
@@ -877,6 +945,27 @@ int main(void)
 			usb_held = usb_present;
 		}
 
+		/* The same idea for a connected collector, and driven from here
+		 * for the same reason: one owner per hold, tracked as a level.
+		 *
+		 * ble_csc.c used to take this hold on connect and drop it on
+		 * disconnect, which made the 60 Hz sampler last exactly as long
+		 * as the link did — and a link can outlast the ride by days. A
+		 * head unit does need measurements after the rider stops, but it
+		 * needs them from ble_csc_notify() on the 1 Hz tick, which runs
+		 * whatever the sampler is doing; what the sampler is for is
+		 * noticing the crank turn again, and INT1 does that from the
+		 * idle state within about a seventh of a revolution.
+		 *
+		 * So hold it only while the bike is still interesting, which is
+		 * the same window advertising uses. */
+		const bool ble_hold = ble_csc_conn_count() > 0 && recently_moved();
+
+		if (ble_hold != ble_held) {
+			cadence_hold_awake(CADENCE_HOLD_BLE, ble_hold);
+			ble_held = ble_hold;
+		}
+
 		console_poll();
 
 		/* One LED pulse per revolution, cleared on the next tick.
@@ -903,6 +992,11 @@ int main(void)
 		tick = 0;
 
 		/* Once per second from here down. */
+
+		lifetime.awake_s++;
+		if (ble_csc_conn_count() > 0) {
+			lifetime.conn_s++;
+		}
 
 		/* A connected head unit needs a measurement even when nothing
 		 * turned: an unchanged revolution count with a fresh timestamp

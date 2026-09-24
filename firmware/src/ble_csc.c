@@ -9,6 +9,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/services/bas.h>
 #include <zephyr/kernel.h>
@@ -259,11 +260,6 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	s_conn_count++;
 
-	/* A connected head unit expects measurements to keep arriving even
-	 * when the rider stops pedalling — that is how it displays 0 rather
-	 * than freezing on the last number. */
-	cadence_hold_awake(CADENCE_HOLD_BLE, true);
-
 	LOG_INF("connected (%u/%u)", s_conn_count, CONFIG_BT_MAX_CONN);
 }
 
@@ -275,17 +271,12 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		s_conn_count--;
 	}
 
-	/* Only the LAST collector leaving releases the hold. Dropping it
-	 * whenever either link goes would park the sampler while the other one
-	 * is still subscribed and waiting for its measurement every second.
-	 *
-	 * s_subscribed is normally maintained by meas_ccc_changed(), which
+	/* s_subscribed is normally maintained by meas_ccc_changed(), which
 	 * Zephyr calls as it clears the departing connection's CCC config;
 	 * clearing it here too is unconditionally right once nothing is
 	 * connected, and does not depend on the order of the two callbacks. */
 	if (s_conn_count == 0) {
 		s_subscribed = false;
-		cadence_hold_awake(CADENCE_HOLD_BLE, false);
 	}
 
 	LOG_INF("disconnected (0x%02x, %u/%u left)", reason, s_conn_count,
@@ -392,6 +383,22 @@ bool ble_csc_is_connected(void)
 uint8_t ble_csc_conn_count(void)
 {
 	return s_conn_count;
+}
+
+static void hang_up(struct bt_conn *conn, void *data)
+{
+	ARG_UNUSED(data);
+
+	/* REMOTE_USER_TERM is the "the other end decided it was done" reason.
+	 * A collector that sees it re-scans and reconnects on its own terms;
+	 * one of the error reasons would have it retry immediately, which is
+	 * the opposite of what a sensor going to sleep wants. */
+	(void)bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+}
+
+void ble_csc_disconnect_all(void)
+{
+	bt_conn_foreach(BT_CONN_TYPE_LE, hang_up, NULL);
 }
 
 bool ble_csc_is_advertising(void)

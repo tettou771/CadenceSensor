@@ -73,6 +73,19 @@ bool ble_csc_is_advertising(void);
  * have it" apart from "the phone simply has not connected yet". */
 uint8_t ble_csc_conn_count(void);
 
+/* Hang up on every collector.
+ *
+ * A peripheral cannot make a central let go, and some centrals never do: an
+ * Apple Watch or a phone that has bonded a workout to this sensor will hold the
+ * link open for as long as it stays in radio range, whether or not anyone is
+ * pedalling. That link is not free — see maybe_system_off() in main.c, which is
+ * the only caller — so once the crank has been still long enough to be certain
+ * the ride is over, the sensor ends the conversation itself.
+ *
+ * Asynchronous: the disconnected callbacks arrive later, so conn_count is still
+ * non-zero when this returns. */
+void ble_csc_disconnect_all(void);
+
 /* Battery Service level, 0-100 %. See the note in ble_csc.c about why this
  * board always reports full. */
 void ble_csc_set_battery(uint8_t percent);
