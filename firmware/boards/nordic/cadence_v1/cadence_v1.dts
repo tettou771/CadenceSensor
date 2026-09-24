@@ -26,9 +26,53 @@
 #include <zephyr/dt-bindings/adc/nrf-saadc.h>
 #include "cadence_v1-pinctrl.dtsi"
 
+/* The last 4 KB of SRAM, kept alive across System OFF.
+ *
+ * Not a micro-optimisation — it is the only instrument this board has. Waking
+ * from System OFF is a reset, so uptime and every counter start again, and the
+ * question the field keeps asking ("the pack went flat in eight days, WHERE did
+ * it go?") cannot be answered by a board that forgets. This holds the running
+ * totals in src/main.c across every sleep.
+ *
+ * It has to be declared HERE, in the devicetree, rather than just setting the
+ * retention bits before sleeping. sys_poweroff() calls
+ * nrfx_ram_ctrl_retention_enable_set(.., false) over ALL of RAM on its way out
+ * — so anything set by hand beforehand is switched off again two lines later,
+ * silently. The next statement in that function restores retention for exactly
+ * the regions a zephyr,retained-ram node describes, which is this one. Setting
+ * the bits by hand was tried first and the counters still came back empty.
+ *
+ * sram0 is shortened to match. 252 KB is far more than this application needs
+ * (it links against 48 KB), and the kernel must not be handed memory that is
+ * also being used for something else.
+ */
+&sram0 {
+	reg = <0x20000000 0x3f000>;
+};
+
 / {
 	model = "Cadence sensor PCB v1";
 	compatible = "nordic,cadence-v1";
+
+	sram@2003f000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x2003f000 0x1000>;
+		zephyr,memory-region = "RETAINED";
+		status = "okay";
+
+		/* The driver takes its address and size from this node's
+		 * PARENT, which is what puts the whole 4 KB under retention.
+		 * Nothing calls the retained_mem API — main.c places its
+		 * counters in the region directly and uses them as ordinary
+		 * variables. This node exists so that poweroff knows the region
+		 * is worth keeping. */
+		retained_mem: retainedmem {
+			compatible = "zephyr,retained-ram";
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <1>;
+		};
+	};
 
 	chosen {
 		zephyr,sram = &sram0;

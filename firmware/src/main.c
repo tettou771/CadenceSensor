@@ -26,6 +26,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <zephyr/kernel.h>
+#include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
@@ -165,16 +166,28 @@ static bool ble_held;
  * Without an ammeter in series the answer has to come from the sensor itself,
  * and the only thing it needs to report is how it spent its time.
  *
- * __noinit puts this outside the region the startup code zeroes, and the
- * nRF52840 retains RAM through System OFF (RAM[n].POWER keeps its reset value,
- * retention enabled, and nothing here clears it), so the totals survive being
- * woken. They do NOT survive the rail actually collapsing — a flat battery, a
- * disconnected cell, the latch released — which is exactly when they should
- * start over, and the magic word is what notices.
+ * Surviving a wake takes more than keeping the startup code away from it.
+ * System OFF powers RAM down section by section, and sys_poweroff() turns
+ * retention off for ALL of RAM on its way out — so this lives in the 4 KB
+ * region the board's devicetree declares as zephyr,retained-ram, which is the
+ * one thing poweroff switches back on before it stops the core. An earlier
+ * version set the retention bits by hand just before sleeping; they were
+ * cleared again two statements later inside sys_poweroff(), and the counters
+ * came back empty with nothing to say why.
+ *
+ * Placed by section rather than with __noinit for the same reason: __noinit
+ * only promises the startup code will not zero it, which says nothing about
+ * where it lands or whether that RAM is still powered.
+ *
+ * What they do not survive is the rail actually collapsing: a flat battery, a
+ * disconnected cell, the latch released. That is the right place to start over
+ * — the question these answer is "where did THIS charge go" — and the magic
+ * word is what notices.
  */
 #define LIFETIME_MAGIC 0x43414431UL /* "CAD1" */
 
-static __noinit struct {
+static __attribute__((section(LINKER_DT_NODE_REGION_NAME(
+	DT_PARENT(DT_NODELABEL(retained_mem)))))) struct {
 	uint32_t magic;
 	uint32_t wakes;   /* System OFF -> awake transitions          */
 	uint32_t awake_s; /* seconds NOT in System OFF                */
@@ -190,6 +203,7 @@ static void lifetime_init(void)
 
 	lifetime.wakes++;
 }
+
 static bool stream_cadence;
 static uint32_t seen_revs;
 static uint16_t batt_mv;
