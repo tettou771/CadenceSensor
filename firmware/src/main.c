@@ -184,7 +184,9 @@ static bool ble_held;
  * — the question these answer is "where did THIS charge go" — and the magic
  * word is what notices.
  */
-#define LIFETIME_MAGIC 0x43414431UL /* "CAD1" */
+/* Bumped whenever the layout below changes, so a board updated over USB does
+ * not read the old fields as the new ones. */
+#define LIFETIME_MAGIC 0x43414432UL /* "CAD2" */
 
 static __attribute__((section(LINKER_DT_NODE_REGION_NAME(
 	DT_PARENT(DT_NODELABEL(retained_mem)))))) struct {
@@ -192,6 +194,10 @@ static __attribute__((section(LINKER_DT_NODE_REGION_NAME(
 	uint32_t wakes;   /* System OFF -> awake transitions          */
 	uint32_t awake_s; /* seconds NOT in System OFF                */
 	uint32_t conn_s;  /* seconds with at least one collector up   */
+	uint32_t usb_s;   /* seconds with the USB stack up (~1.3 mA)  */
+	uint32_t vbus_s;  /* seconds VBUS read as present             */
+	uint32_t adv_s;   /* seconds advertising                      */
+	uint32_t batt_mv; /* last pack reading taken with NO cable in */
 } lifetime;
 
 static void lifetime_init(void)
@@ -699,6 +705,10 @@ static void print_status(void)
 	 * battery story without an ammeter. */
 	printk("lifetime  : %u wakes, awake %u s, connected %u s\n",
 	       lifetime.wakes, lifetime.awake_s, lifetime.conn_s);
+	printk("            usb %u s, vbus %u s, adv %u s, "
+	       "last on-battery %u mV\n",
+	       lifetime.usb_s, lifetime.vbus_s, lifetime.adv_s,
+	       lifetime.batt_mv);
 }
 
 static void print_help(void)
@@ -1011,6 +1021,21 @@ int main(void)
 		if (ble_csc_conn_count() > 0) {
 			lifetime.conn_s++;
 		}
+		/* The three states that can cost hundreds of microamps, each
+		 * counted on its own so a drained pack can be pinned on one of
+		 * them. vbus_s and usb_s are separate on purpose: VBUS detection
+		 * on this board has already been seen to disagree with the
+		 * cable, and USB coming up with no cable in would show as vbus_s
+		 * climbing on a sensor nobody plugged in. */
+		if (usb_present) {
+			lifetime.usb_s++;
+		}
+		if (vbus_present()) {
+			lifetime.vbus_s++;
+		}
+		if (ble_csc_is_advertising()) {
+			lifetime.adv_s++;
+		}
 
 		/* A connected head unit needs a measurement even when nothing
 		 * turned: an unchanged revolution count with a fresh timestamp
@@ -1026,6 +1051,12 @@ int main(void)
 
 			if (battery_read(&mv, &pct) == 0) {
 				batt_mv = mv;
+				/* Only off the cable: on charge the pack reads
+				 * high, and the point of keeping this is to
+				 * know where it really stood when we left it. */
+				if (!vbus_present()) {
+					lifetime.batt_mv = mv;
+				}
 				ble_csc_set_battery(pct);
 
 				/* Empty is defined by the PERCENTAGE, never by
